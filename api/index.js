@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 module.exports = async (req, res) => {
-    // CORS & Method Check
+    // CORS Setup
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,15 +12,13 @@ module.exports = async (req, res) => {
     const { host, mac } = req.body;
     if (!host || !mac) return res.status(400).json({ message: 'Missing Data' });
 
-    // ১. পাইথন স্ক্রিপ্টের মতো কাস্টম পার্সার (String Splitter)
-    // এটি JSON ফেইল করলেও টেক্সট থেকে ডাটা খুঁজে বের করবে
+    // ১. কাস্টম এক্সট্রাক্টর (Data Parser)
     const extract = (text, key) => {
         try {
             if (typeof text !== 'string') text = JSON.stringify(text);
             const parts = text.split(`"${key}":"`);
             if (parts.length > 1) {
-                let val = parts[1].split('"')[0];
-                return val.replace(/\\/g, ''); // ক্লিন করা
+                return parts[1].split('"')[0].replace(/\\/g, '');
             }
         } catch (e) {}
         return null;
@@ -28,87 +26,104 @@ module.exports = async (req, res) => {
 
     let baseUrl = host.endsWith('/') ? host.slice(0, -1) : host;
     
-    // পাইথন স্ক্রিপ্ট থেকে নেওয়া সব পাথ
+    // ২. সম্ভাব্য সব পাথ (Paths)
     const portalPaths = [
         '/portal.php',
         '/server/load.php',
         '/stalker_portal/server/load.php',
         '/c/portal.php',
         '/c/server/load.php',
-        '/portalstb/portal.php',
-        '/magportal/portal.php',
-        '/ministra/portal.php'
+        '/magportal/portal.php'
     ];
 
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 2721 Mobile Safari/533.3',
-        'Cookie': `mac=${mac}; stb_lang=en; timezone=Europe/Paris;`,
-        'Accept': '*/*',
-        'Referer': baseUrl,
-        'Authorization': 'Bearer 123'
-    };
+    // ৩. বিভিন্ন ডিভাইসের ইউজার এজেন্ট (যাতে ব্লক না খায়)
+    const userAgents = [
+        'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3', // MAG 250
+        'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 4 rev: 2721 Mobile Safari/533.3', // MAG 254
+        'Mozilla/5.0 (Linux; Android 7.1.2; A95X F1 Build/NHG47L) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.125 Safari/537.36' // Android Box
+    ];
+
+    // ৪. ফেক আইপি জেনারেটর (ব্লক এড়ানোর জন্য)
+    const randomIP = `${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`;
 
     let workingPath = '';
     let token = '';
-    let rawData = '';
+    let usedUA = '';
+    let lastError = '';
 
     try {
-        // ২. Handshake Loop (সঠিক পাথ খোঁজা)
-        for (const path of portalPaths) {
-            try {
-                const targetUrl = `${baseUrl}${path}?type=stb&action=handshake&token=&prehash=false&JsHttpRequest=1-xml`;
-                const resHand = await axios.get(targetUrl, { headers, timeout: 3000 });
-                
-                // পাইথন স্টাইলে টোকেন খোঁজা
-                let tempToken = extract(resHand.data, "token") || resHand.data?.js?.token;
-                
-                if (tempToken) {
-                    workingPath = path;
-                    token = tempToken;
-                    break;
+        // লুপ ১: প্রতিটি পাথ চেক করবে
+        pathLoop: for (const path of portalPaths) {
+            // লুপ ২: প্রতিটি পাথের জন্য আলাদা আলাদা ডিভাইস (User Agent) দিয়ে ট্রাই করবে
+            for (const ua of userAgents) {
+                try {
+                    const targetUrl = `${baseUrl}${path}?type=stb&action=handshake&token=&prehash=false&JsHttpRequest=1-xml`;
+                    
+                    const headers = {
+                        'User-Agent': ua,
+                        'Cookie': `mac=${mac}; stb_lang=en; timezone=Europe/Paris;`,
+                        'Accept': '*/*',
+                        'Referer': baseUrl + '/',
+                        'X-Forwarded-For': randomIP, // Fake IP
+                        'Client-IP': randomIP
+                    };
+
+                    const resHand = await axios.get(targetUrl, { headers, timeout: 3500 });
+
+                    // টোকেন চেক
+                    let tempToken = extract(resHand.data, "token") || resHand.data?.js?.token;
+
+                    if (tempToken) {
+                        workingPath = path;
+                        token = tempToken;
+                        usedUA = ua; // যে ইউজার এজেন্ট দিয়ে কাজ হয়েছে, সেটি সেভ রাখা
+                        break pathLoop; // সব লুপ ব্রেক করে বের হয়ে যাবে
+                    }
+                } catch (e) {
+                    lastError = e.message;
+                    if(e.response) lastError = `Status: ${e.response.status} (${e.response.statusText})`;
+                    continue;
                 }
-            } catch (e) { continue; }
+            }
         }
 
         if (!token) {
-            return res.json({ success: false, message: 'MAC Dead / Handshake Failed ❌' });
+            return res.json({ 
+                success: false, 
+                message: `Handshake Failed ❌`,
+                details: `Reason: ${lastError || 'Invalid Response/Blocked'}. Try checking Host URL.`
+            });
         }
 
-        headers['Authorization'] = `Bearer ${token}`;
+        // সফল হলে বাকি ডাটা আনা
+        const headers = {
+            'User-Agent': usedUA,
+            'Cookie': `mac=${mac}; stb_lang=en; timezone=Europe/Paris;`,
+            'Authorization': `Bearer ${token}`,
+            'Referer': baseUrl + '/',
+            'X-Forwarded-For': randomIP
+        };
 
-        // ৩. Get Profile (Text Mode)
-        // আমরা সরাসরি টেক্সট রেসপন্স নিয়ে কাজ করব যাতে কোনো ডাটা মিস না হয়
         const profUrl = `${baseUrl}${workingPath}?type=stb&action=get_profile&JsHttpRequest=1-xml`;
-        const profRes = await axios.get(profUrl, { headers, timeout: 5000 });
-        rawData = JSON.stringify(profRes.data); // পুরো ডাটা স্ট্রিং এ কনভার্ট
+        const profRes = await axios.get(profUrl, { headers, timeout: 6000 });
+        const rawData = JSON.stringify(profRes.data);
 
-        // ৪. পাইথন লজিক দিয়ে ডাটা বের করা
-        // পাইথন কোডে: login, password, parent_password, tariff_plan_id ইত্যাদি বের করা হতো
+        // Data Mapping
         const dataMap = {
-            expiry: extract(rawData, "phone") || extract(rawData, "end_date") || extract(rawData, "expire_billing_date") || 'Unlimited',
+            expiry: extract(rawData, "phone") || extract(rawData, "end_date") || 'Unlimited',
             created: extract(rawData, "created") || 'Unknown',
             username: extract(rawData, "login") || extract(rawData, "fname") || extract(rawData, "name") || 'N/A',
             password: extract(rawData, "password") || extract(rawData, "pass") || 'N/A',
-            adult_pass: extract(rawData, "parent_password") || '0000',
-            settings_pass: extract(rawData, "settings_password") || 'N/A',
             tariff_id: extract(rawData, "tariff_plan_id") || 'N/A',
-            tariff_plan: extract(rawData, "tariff_plan") || extract(rawData, "package_name") || 'N/A',
-            max_online: extract(rawData, "max_online") || '1', // ডিফল্ট ১
-            stb_type: extract(rawData, "stb_type") || 'MAG250',
-            country: extract(rawData, "country") || extract(rawData, "locale") || 'N/A',
-            comment: extract(rawData, "comment") || 'No Comment'
+            max_online: extract(rawData, "max_online") || '1',
+            stb_type: extract(rawData, "stb_type") || 'MAG',
+            raw_profile: profRes.data?.js || {}
         };
 
-        // ৫. M3U লিংক জেনারেট
-        // পাইথন স্ক্রিপ্টে m3u লিংকে ইউজারনেম/পাসওয়ার্ড হিসেবে ম্যাক ব্যবহার করা হয়েছে যদি লগিন না থাকে
-        let m3uUser = dataMap.username !== 'N/A' ? dataMap.username : mac;
-        let m3uPass = dataMap.password !== 'N/A' ? dataMap.password : mac;
-        
-        // কিছু পোর্টালে লগিন দিয়েই স্ট্রিম চলে, কিছু পোর্টালে ম্যাক লাগে
-        // সেফটির জন্য আমরা ম্যাক-ভিত্তিক লিংক দিচ্ছি যা পাইথন স্ক্রিপ্টে ডিফল্ট ছিল
+        // M3U Link
         const m3uLink = `${baseUrl}/get.php?username=${mac}&password=${mac}&type=m3u_plus&output=ts`;
 
-        // ৬. ক্যাটাগরি স্ক্যান (অপশনাল)
+        // Categories (Optional)
         let live = [], vod = [];
         try {
             const liveRes = await axios.get(`${baseUrl}${workingPath}?type=itv&action=get_genres&JsHttpRequest=1-xml`, { headers, timeout: 3000 });
