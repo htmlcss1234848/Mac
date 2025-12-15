@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Portal Checker</title>
+    <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #0f172a; /* Dark Blue Background */
+    color: #e2e8f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+.container {
+    background-color: #1e293b;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    width: 100%;
+    max-width: 400px;
+    border: 1px solid #334155;
+}
+h2 { text-align: center; color: #38bdf8; margin-bottom: 1.5rem; }
+
+.input-group { margin-bottom: 1rem; }
+label { display: block; margin-bottom: 0.5rem; font-size: 0.9rem; color: #94a3b8; }
+input {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: white;
+    box-sizing: border-box; /* Fix padding issue */
+    outline: none;
+}
+input:focus { border-color: #38bdf8; }
+
+button {
+    width: 100%;
+    padding: 0.8rem;
+    background-color: #38bdf8;
+    border: none;
+    color: #0f172a;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1rem;
+    margin-top: 1rem;
+    transition: background 0.3s;
+}
+button:hover { background-color: #0ea5e9; }
+button:disabled { background-color: #64748b; cursor: not-allowed; }
+
+.result-box {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: #000;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    white-space: pre-wrap; /* JSON format সুন্দর দেখানোর জন্য */
+    word-break: break-word;
+}
+.success { border-left: 4px solid #22c55e; color: #4ade80; }
+.error { border-left: 4px solid #ef4444; color: #f87171; }
+  </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>📺 IPTV Portal Checker</h2>
+        
+        <div class="input-group">
+            <label>Portal URL (http://...)</label>
+            <input type="text" id="host" placeholder="http://example.com:8080/c/">
+        </div>
+
+        <div class="input-group">
+            <label>MAC Address</label>
+            <input type="text" id="mac" placeholder="00:1A:79:XX:XX:XX">
+        </div>
+
+        <button onclick="checkMac()" id="btn">Check Validity</button>
+
+        <div id="result" class="result-box" style="display: none;"></div>
+    </div>
+
+    <script>
+      async function checkMac() {
+    const hostInput = document.getElementById('host');
+    const macInput = document.getElementById('mac');
+    const resultBox = document.getElementById('result');
+    const btn = document.getElementById('btn');
+
+    const host = hostInput.value.trim();
+    const mac = macInput.value.trim();
+
+    if(!host || !mac) {
+        alert("Please enter both Host URL and MAC Address!");
+        return;
+    }
+
+    // UI Update (Loading state)
+    btn.innerText = "Checking...";
+    btn.disabled = true;
+    resultBox.style.display = 'none';
+
+    try {
+        // Vercel Backend API call
+        const response = await fetch('/api/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, mac })
+        });
+
+        const data = await response.json();
+
+        resultBox.style.display = 'block';
+        
+        if (data.success) {
+            resultBox.className = "result-box success";
+            // সুন্দর করে ডাটা দেখানোর জন্য
+            resultBox.innerHTML = `<strong>✅ MAC Active!</strong><br><br>Status: Active<br>Expiry: ${data.data?.phone || 'N/A'}<br><br>Raw Data:<br>${JSON.stringify(data.data, null, 2)}`;
+        } else {
+            resultBox.className = "result-box error";
+            resultBox.innerHTML = `<strong>❌ Failed</strong><br>${data.message}`;
+        }
+
+    } catch (err) {
+        resultBox.style.display = 'block';
+        resultBox.className = "result-box error";
+        resultBox.innerHTML = `<strong>Server Error</strong><br>Failed to connect to backend proxy.`;
+        console.error(err);
+    } finally {
+        btn.innerText = "Check Validity";
+        btn.disabled = false;
+    }
+      }
+    </script>
+</body>
+</html>
