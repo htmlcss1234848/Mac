@@ -3,115 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPTV Portal Checker</title>
+    <title>FluxMAC Validator</title>
     <link rel="stylesheet" href="style.css">
-  <style>
-    body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #0f172a; /* Dark Blue Background */
-    color: #e2e8f0;
+    <style>
+        /* Cyberpunk Theme Colors */
+:root {
+    --bg-color: #050505;
+    --panel-bg: #0a0a0a;
+    --neon-blue: #00f3ff;
+    --neon-green: #00ff9d;
+    --neon-red: #ff0055;
+    --text-color: #e0e0e0;
+}
+
+body {
+    background-color: var(--bg-color);
+    background-image: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000 100%);
+    color: var(--text-color);
+    font-family: 'Courier New', monospace;
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100vh;
     margin: 0;
 }
-.container {
-    background-color: #1e293b;
-    padding: 2rem;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    width: 100%;
-    max-width: 400px;
-    border: 1px solid #334155;
-}
-h2 { text-align: center; color: #38bdf8; margin-bottom: 1.5rem; }
 
-.input-group { margin-bottom: 1rem; }
-label { display: block; margin-bottom: 0.5rem; font-size: 0.9rem; color: #94a3b8; }
-input {
+.glass-panel {
+    background: rgba(10, 10, 10, 0.8);
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 30px;
+    width: 400px;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.neon-text {
+    text-align: center;
+    color: var(--neon-blue);
+    text-shadow: 0 0 10px var(--neon-blue);
+    margin-bottom: 30px;
+    letter-spacing: 2px;
+}
+
+.input-group { margin-bottom: 20px; }
+label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 5px; }
+
+input[type="text"] {
     width: 100%;
-    padding: 0.75rem;
-    border-radius: 6px;
-    border: 1px solid #475569;
-    background: #0f172a;
-    color: white;
-    box-sizing: border-box; /* Fix padding issue */
+    background: #111;
+    border: 1px solid #333;
+    color: var(--neon-blue);
+    padding: 12px;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-family: monospace;
     outline: none;
+    transition: border 0.3s;
 }
-input:focus { border-color: #38bdf8; }
+input[type="text"]:focus { border-color: var(--neon-blue); box-shadow: 0 0 5px rgba(0,243,255,0.3); }
 
-button {
+.cyber-btn {
     width: 100%;
-    padding: 0.8rem;
-    background-color: #38bdf8;
-    border: none;
-    color: #0f172a;
-    border-radius: 6px;
-    cursor: pointer;
+    padding: 15px;
+    background: transparent;
+    border: 1px solid var(--neon-blue);
+    color: var(--neon-blue);
     font-weight: bold;
-    font-size: 1rem;
-    margin-top: 1rem;
-    transition: background 0.3s;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
-button:hover { background-color: #0ea5e9; }
-button:disabled { background-color: #64748b; cursor: not-allowed; }
+.cyber-btn:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 15px var(--neon-blue); }
+.cyber-btn:disabled { border-color: #555; color: #555; cursor: not-allowed; box-shadow: none; }
 
-.result-box {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background: #000;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    white-space: pre-wrap; /* JSON format সুন্দর দেখানোর জন্য */
-    word-break: break-word;
+.loading { text-align: center; margin-top: 20px; color: #ffeb3b; animation: blink 1s infinite; }
+
+.result-card {
+    margin-top: 25px;
+    border-top: 1px solid #333;
+    padding-top: 20px;
 }
-.success { border-left: 4px solid #22c55e; color: #4ade80; }
-.error { border-left: 4px solid #ef4444; color: #f87171; }
-  </style>
+.status-header { font-size: 1.2rem; text-align: center; margin-bottom: 15px; font-weight: bold; }
+.active { color: var(--neon-green); text-shadow: 0 0 10px var(--neon-green); }
+.inactive { color: var(--neon-red); text-shadow: 0 0 10px var(--neon-red); }
+
+.info-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9rem; }
+.highlight { color: #ffeb3b; }
+
+.m3u-box { margin-top: 20px; }
+.m3u-box input { font-size: 0.7rem; margin-bottom: 5px; }
+.copy-btn {
+    width: 100%;
+    background: #222;
+    border: 1px solid #444;
+    color: white;
+    padding: 5px;
+    cursor: pointer;
+}
+.copy-btn:hover { background: #333; }
+
+@keyframes blink { 50% { opacity: 0.5; } }
+    </style>
 </head>
 <body>
 
-    <div class="container">
-        <h2>📺 IPTV Portal Checker</h2>
+    <div class="glass-panel">
+        <h2 class="neon-text">FLUX MAC VALIDATOR</h2>
         
         <div class="input-group">
-            <label>Portal URL (http://...)</label>
+            <label>PORTAL URL</label>
             <input type="text" id="host" placeholder="http://example.com:8080/c/">
         </div>
 
         <div class="input-group">
-            <label>MAC Address</label>
-            <input type="text" id="mac" placeholder="00:1A:79:XX:XX:XX">
+            <label>MAC ADDRESS</label>
+            <input type="text" id="mac" placeholder="00:1A:79:XX:XX:XX" maxlength="17">
         </div>
 
-        <button onclick="checkMac()" id="btn">Check Validity</button>
+        <button onclick="checkMac()" id="btn" class="cyber-btn">VALIDATE ACCESS</button>
 
-        <div id="result" class="result-box" style="display: none;"></div>
+        <div id="loading" class="loading" style="display: none;">SCANNING PORTAL...</div>
+
+        <div id="result" class="result-card" style="display: none;">
+            <div id="statusHeader" class="status-header"></div>
+            <div class="info-row">
+                <span>Expiry:</span> <span id="expiry" class="highlight"></span>
+            </div>
+            <div class="info-row">
+                <span>Created:</span> <span id="created"></span>
+            </div>
+            
+            <div class="m3u-box">
+                <label>Generated M3U Link:</label>
+                <input type="text" id="m3uLink" readonly>
+                <button onclick="copyM3U()" class="copy-btn">COPY</button>
+            </div>
+        </div>
     </div>
 
     <script>
-      async function checkMac() {
-    const hostInput = document.getElementById('host');
-    const macInput = document.getElementById('mac');
-    const resultBox = document.getElementById('result');
+        // MAC Auto Formatter
+document.getElementById('mac').addEventListener('input', function (e) {
+    let target = e.target;
+    let input = target.value.replace(/[^A-Fa-f0-9]/g, "").substring(0, 12);
+    let formatted = "";
+    for (let i = 0; i < input.length; i++) {
+        if (i > 0 && i % 2 === 0) formatted += ":";
+        formatted += input[i];
+    }
+    target.value = formatted.toUpperCase();
+});
+
+async function checkMac() {
+    const host = document.getElementById('host').value.trim();
+    const mac = document.getElementById('mac').value.trim();
+    const resultDiv = document.getElementById('result');
+    const loadingDiv = document.getElementById('loading');
     const btn = document.getElementById('btn');
 
-    const host = hostInput.value.trim();
-    const mac = macInput.value.trim();
+    if (!host || !mac) return alert("Please fill all fields");
 
-    if(!host || !mac) {
-        alert("Please enter both Host URL and MAC Address!");
-        return;
-    }
-
-    // UI Update (Loading state)
-    btn.innerText = "Checking...";
+    // UI Reset
     btn.disabled = true;
-    resultBox.style.display = 'none';
+    loadingDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
 
     try {
-        // Vercel Backend API call
         const response = await fetch('/api/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -120,27 +179,40 @@ button:disabled { background-color: #64748b; cursor: not-allowed; }
 
         const data = await response.json();
 
-        resultBox.style.display = 'block';
+        loadingDiv.style.display = 'none';
+        resultDiv.style.display = 'block';
+
+        const statusHeader = document.getElementById('statusHeader');
         
         if (data.success) {
-            resultBox.className = "result-box success";
-            // সুন্দর করে ডাটা দেখানোর জন্য
-            resultBox.innerHTML = `<strong>✅ MAC Active!</strong><br><br>Status: Active<br>Expiry: ${data.data?.phone || 'N/A'}<br><br>Raw Data:<br>${JSON.stringify(data.data, null, 2)}`;
+            statusHeader.innerHTML = "ACCESS GRANTED ✅";
+            statusHeader.className = "status-header active";
+            
+            document.getElementById('expiry').innerText = data.data.expiry;
+            document.getElementById('created').innerText = data.data.created;
+            document.getElementById('m3uLink').value = data.data.m3u;
         } else {
-            resultBox.className = "result-box error";
-            resultBox.innerHTML = `<strong>❌ Failed</strong><br>${data.message}`;
+            statusHeader.innerHTML = "ACCESS DENIED ❌";
+            statusHeader.className = "status-header inactive";
+            document.getElementById('expiry').innerText = "N/A";
+            document.getElementById('created').innerText = "N/A";
+            document.getElementById('m3uLink').value = "No Playlist Available";
         }
 
     } catch (err) {
-        resultBox.style.display = 'block';
-        resultBox.className = "result-box error";
-        resultBox.innerHTML = `<strong>Server Error</strong><br>Failed to connect to backend proxy.`;
-        console.error(err);
+        loadingDiv.style.display = 'none';
+        alert("Server Error: Check your connection");
     } finally {
-        btn.innerText = "Check Validity";
         btn.disabled = false;
     }
-      }
+}
+
+function copyM3U() {
+    const copyText = document.getElementById("m3uLink");
+    copyText.select();
+    document.execCommand("copy");
+    alert("M3U Link Copied! 📋");
+}
     </script>
 </body>
 </html>
