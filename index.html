@@ -6,7 +6,84 @@
     <title>IPTV Deep Scanner</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* আগের CSS এর সাথে এই অংশটুকু রিপ্লেস বা অ্যাড করুন */
+        body {
+    background-color: #0b0f19;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+.container {
+    background: #151b2b;
+    padding: 25px;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 450px;
+    box-shadow: 0 0 20px rgba(0, 150, 255, 0.1);
+    border: 1px solid #1f293a;
+}
+h2 { text-align: center; color: #3b82f6; margin-top: 0; }
+
+input {
+    width: 100%;
+    padding: 12px;
+    background: #0b0f19;
+    border: 1px solid #1f293a;
+    color: #fff;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+}
+button {
+    width: 100%;
+    padding: 12px;
+    background: #3b82f6;
+    border: none;
+    color: white;
+    font-weight: bold;
+    border-radius: 6px;
+    cursor: pointer;
+}
+button:hover { background: #2563eb; }
+
+/* Result Section */
+.result-box { margin-top: 20px; border-top: 1px solid #1f293a; padding-top: 15px; }
+.status-text { text-align: center; font-size: 1.2rem; margin-bottom: 15px; font-weight: bold; }
+.active { color: #10b981; }
+.error { color: #ef4444; }
+
+.info-grid {
+    display: flex;
+    justify-content: space-between;
+    background: #0b0f19;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+}
+
+.content-section { margin-bottom: 15px; }
+.content-section h4 { margin: 5px 0 8px 0; color: #94a3b8; font-size: 0.9rem; }
+
+/* Badges for Categories */
+.tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.badge {
+    background: #1e293b;
+    color: #cbd5e1;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    border: 1px solid #334155;
+}
+
+.m3u-area { display: flex; gap: 5px; margin-top: 20px; }
+.m3u-area input { margin: 0; font-size: 0.8rem; }
+.m3u-area button { width: 30%; font-size: 0.8rem; background: #334155; }
+
+ /* আগের CSS এর সাথে এই অংশটুকু রিপ্লেস বা অ্যাড করুন */
 
 .detail-grid {
     display: grid;
