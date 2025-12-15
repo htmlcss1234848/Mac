@@ -1,8 +1,9 @@
 const axios = require('axios');
 const https = require('https');
+const crypto = require('crypto');
 
 module.exports = async (req, res) => {
-    // CORS Headers
+    // CORS Setup
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -13,11 +14,50 @@ module.exports = async (req, res) => {
     const { host, mac } = req.body;
     if (!host || !mac) return res.status(400).json({ message: 'Missing Data' });
 
-    // ১. SSL ভেরিফিকেশন বন্ধ করা (অনেক আইপিটিভি প্যানেলে SSL এরর দেয়)
-    const httpsAgent = new https.Agent({ 
+    // ১. অ্যাডভান্সড SSL/TLS স্পুফিং (Cloudflare বাইপাস করার মেইন অস্ত্র)
+    // আমরা ব্রাউজারের মতো সাইফার (Ciphers) লিস্ট দিচ্ছি
+    const agent = new https.Agent({
         rejectUnauthorized: false,
-        keepAlive: true 
+        keepAlive: true,
+        ciphers: [
+            'TLS_AES_128_GCM_SHA256',
+            'TLS_AES_256_GCM_SHA384',
+            'TLS_CHACHA20_POLY1305_SHA256',
+            'ECDHE-ECDSA-AES128-GCM-SHA256',
+            'ECDHE-RSA-AES128-GCM-SHA256',
+            'ECDHE-ECDSA-AES256-GCM-SHA384',
+            'ECDHE-RSA-AES256-GCM-SHA384',
+            'ECDHE-ECDSA-CHACHA20-POLY1305',
+            'ECDHE-RSA-CHACHA20-POLY1305',
+            'ECDHE-RSA-AES128-SHA',
+            'ECDHE-RSA-AES256-SHA',
+            'AES128-GCM-SHA256',
+            'AES256-GCM-SHA384',
+            'AES128-SHA',
+            'AES256-SHA'
+        ].join(':'),
+        ecdhCurve: 'prime256v1:secp384r1',
+        secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT
     });
+
+    // ২. একদম রিয়েল ব্রাউজারের মতো হেডার
+    const browserHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'max-age=0',
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Connection': 'keep-alive',
+        'Cookie': `mac=${mac}; stb_lang=en; timezone=Europe/Paris;`
+    };
 
     const extract = (text, key) => {
         try {
@@ -29,110 +69,74 @@ module.exports = async (req, res) => {
     };
 
     let baseUrl = host.endsWith('/') ? host.slice(0, -1) : host;
+    const paths = ['/portal.php', '/server/load.php', '/c/portal.php']; // ছোট লিস্ট, ব্লক এড়াতে
     
-    // ২. ডিবাগ লগ রাখার অ্যারে
+    let token = '';
+    let workingPath = '';
     let debugLogs = [];
 
-    const portalPaths = [
-        '/portal.php',
-        '/server/load.php',
-        '/stalker_portal/server/load.php',
-        '/c/portal.php',
-        '/magportal/portal.php'
-    ];
-
-    // Python Script এর হুবহু হেডার
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 2 rev: 250 Safari/533.3',
-        'Cookie': `mac=${mac}; stb_lang=en; timezone=Europe/Paris;`,
-        'Accept': '*/*',
-        'Referer': baseUrl + '/c/',
-        'X-User-Agent': 'Model: MAG250; Link: Ethernet',
-        'Authorization': 'Bearer 123'
-    };
-
-    let workingPath = '';
-    let token = '';
-
     try {
-        // ৩. লুপ চালিয়ে চেক করা এবং লগ রাখা
-        for (const path of portalPaths) {
+        for (const path of paths) {
             const targetUrl = `${baseUrl}${path}?type=stb&action=handshake&token=&prehash=false&JsHttpRequest=1-xml`;
             
             try {
                 const response = await axios.get(targetUrl, { 
-                    headers, 
-                    httpsAgent, // SSL Bypass
-                    timeout: 4000 
+                    headers: browserHeaders, 
+                    httpsAgent: agent, // কাস্টম এজেন্ট ব্যবহার
+                    timeout: 5000 
                 });
 
-                const rawData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+                const rawData = JSON.stringify(response.data);
                 
-                // লগ সেভ করছি
-                debugLogs.push({
-                    path: path,
-                    status: response.status,
-                    has_token: rawData.includes('token'),
-                    preview: rawData.substring(0, 50) // রেসপন্সের প্রথম ৫০ অক্ষর
-                });
+                // ডিবাগ লগ
+                debugLogs.push({ path, status: response.status, data_preview: rawData.substring(0, 50) });
 
                 let tempToken = extract(rawData, "token") || response.data?.js?.token;
-
                 if (tempToken) {
                     workingPath = path;
                     token = tempToken;
                     break;
                 }
             } catch (e) {
-                // এরর লগ
-                debugLogs.push({
-                    path: path,
-                    error: e.message,
-                    status: e.response?.status || 'Unknown',
-                    response_data: e.response?.data ? JSON.stringify(e.response.data).substring(0, 50) : 'No Data'
-                });
+                // 403 এরর হ্যান্ডেলিং
+                debugLogs.push({ path, error: e.message, status: e.response?.status });
+                continue;
             }
         }
 
-        // ৪. যদি ফেইল করে, তাহলে পুরো লগ পাঠিয়ে দেব
         if (!token) {
             return res.json({ 
                 success: false, 
-                message: '❌ Handshake Failed',
-                debug_info: debugLogs // এখানেই আপনি আসল কারণ দেখতে পাবেন
+                message: '❌ Blocked by Cloudflare or Invalid',
+                debug_info: debugLogs
             });
         }
 
-        // ৫. সফল হলে বাকি ডাটা আনা (Profile)
-        headers['Authorization'] = `Bearer ${token}`;
+        // সফল হলে টোকেন দিয়ে রিকোয়েস্ট
+        const authHeaders = { ...browserHeaders, 'Authorization': `Bearer ${token}` };
         
-        let profData = {};
-        try {
-            const profUrl = `${baseUrl}${workingPath}?type=stb&action=get_profile&JsHttpRequest=1-xml`;
-            const profRes = await axios.get(profUrl, { headers, httpsAgent, timeout: 5000 });
-            profData = profRes.data?.js || {};
-        } catch (e) {
-            debugLogs.push({ step: 'get_profile', error: e.message });
-        }
+        const profRes = await axios.get(`${baseUrl}${workingPath}?type=stb&action=get_profile&JsHttpRequest=1-xml`, { 
+            headers: authHeaders, 
+            httpsAgent: agent,
+            timeout: 5000 
+        });
 
-        // সফল রেসপন্স
+        const p = profRes.data?.js || {};
+
         return res.json({
             success: true,
-            message: 'Active Account ✅',
-            connected_path: workingPath,
+            message: 'Bypassed & Active ✅',
             data: {
-                mac: mac,
-                expiry: profData.phone || profData.end_date || 'Unlimited',
-                created: profData.created || 'Unknown',
-                username: profData.login || profData.fname || 'N/A',
-                password: profData.password || 'N/A',
-                tariff_id: profData.tariff_plan_id || 'N/A',
+                mac,
+                expiry: p.phone || p.end_date || 'Unlimited',
+                created: p.created,
+                username: p.login || p.fname || 'N/A',
+                password: p.password || 'N/A',
                 m3u: `${baseUrl}/get.php?username=${mac}&password=${mac}&type=m3u_plus&output=ts`
-            },
-            logs: debugLogs // সফল হলেও লগ দেখাবে
+            }
         });
 
     } catch (error) {
-        return res.status(500).json({ success: false, message: 'Server Crash', error: error.message, logs: debugLogs });
+        return res.status(500).json({ success: false, message: 'Server Error', error: error.message, logs: debugLogs });
     }
 };
