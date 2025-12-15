@@ -179,7 +179,7 @@ button:hover { background: #2563eb; }
 
     <script>
 
-    </sc// Auto Format MAC
+    // Auto Format MAC
 document.getElementById('mac').addEventListener('input', function(e) {
     let val = e.target.value.replace(/[^A-Fa-f0-9]/g, "").substring(0, 12);
     let formatted = val.match(/.{1,2}/g)?.join(":") || val;
