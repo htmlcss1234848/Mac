@@ -178,7 +178,8 @@ button:hover { background: #2563eb; }
     </div>
 
     <script>
-        // Auto Format MAC
+
+    </sc// Auto Format MAC
 document.getElementById('mac').addEventListener('input', function(e) {
     let val = e.target.value.replace(/[^A-Fa-f0-9]/g, "").substring(0, 12);
     let formatted = val.match(/.{1,2}/g)?.join(":") || val;
@@ -191,9 +192,9 @@ async function checkMac() {
     const resultBox = document.getElementById('result');
     const btn = document.getElementById('btn');
 
-    if(!host || !mac) return alert("Missing Host or MAC");
+    if(!host || !mac) return alert("Required fields missing");
 
-    btn.innerText = "Fetching Details...";
+    btn.innerText = "Deep Scanning...";
     btn.disabled = true;
     resultBox.style.display = 'none';
 
@@ -209,38 +210,44 @@ async function checkMac() {
         const statusEl = document.getElementById('status');
         
         if (data.success) {
-            statusEl.innerText = "✅ ACCOUNT ACCESS GRANTED";
+            statusEl.innerText = "✅ ACTIVE ACCOUNT";
             statusEl.className = "status-text active";
             
-            // Map Data to UI
             const d = data.data;
+            
+            // Console এ আসল ডাটা প্রিন্ট হবে (Debug এর জন্য)
+            console.log("🔥 RAW PROFILE DATA:", d.raw_profile);
+            
             setText('expiry', d.expiry);
             setText('created', d.created);
             setText('username', d.username);
             setText('password', d.password);
-            setText('adult_pass', d.adult_pass);
-            setText('settings_pass', d.settings_pass);
             setText('tariff_id', d.tariff_id);
-            setText('plan_name', d.plan_name);
             setText('max_online', d.max_online);
             setText('stb_type', d.stb_type);
-            setText('country', d.country);
-            setText('comment', d.comment);
+            
+            // Comment বা অন্যান্য ফিল্ড খালি থাকলে N/A দেখাবে
+            setText('plan_name', d.plan_name);
 
             document.getElementById('m3uLink').value = d.m3u;
 
-            // Render Lists
             renderList('liveList', d.liveCategories);
             renderList('vodList', d.vodCategories);
+            
+            // যদি N/A আসে, ইউজারকে কনসোল চেক করতে বলা
+            if(d.username === 'Hidden' || d.username === 'N/A') {
+                console.warn("User info might be under a different key name. Check 'raw_profile' above.");
+            }
+
         } else {
             statusEl.innerText = "❌ " + data.message;
             statusEl.className = "status-text error";
         }
 
     } catch (error) {
-        alert("Error: " + error.message);
+        alert("Client Error: " + error.message);
     } finally {
-        btn.innerText = "SCAN FULL INFO";
+        btn.innerText = "SCAN NOW";
         btn.disabled = false;
     }
 }
@@ -253,7 +260,7 @@ function setText(id, text) {
 function renderList(elementId, items) {
     const el = document.getElementById(elementId);
     if (!items || items.length === 0) {
-        el.innerHTML = '<span style="color: #555; font-size: 0.8rem;">Empty</span>';
+        el.innerHTML = '<span style="color: #555; font-size: 0.8rem;">Empty / Hidden</span>';
         return;
     }
     el.innerHTML = items.map(item => `<span class="badge">${item}</span>`).join('');
@@ -263,8 +270,7 @@ function copyM3U() {
     const copyText = document.getElementById("m3uLink");
     copyText.select();
     document.execCommand("copy");
-    alert("Copied!");
-}
-    </script>
+    alert("M3U Copied!");
+    }</script>
 </body>
 </html>
